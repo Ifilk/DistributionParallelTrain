@@ -1,0 +1,43 @@
+method = "Megaminx"
+model = "LR"
+dataset = "mnist"
+iid = 0
+agg_mode = "HN"
+
+world_size = 10
+device = "cpu"
+topology = "random"
+# 0-> Split dataset by class, 1-> Split dataset by class and number
+partition_method = 0
+# 0-> Use global testset, 1-> Use local testset
+test_method = 0
+
+p = "15"
+data_overlap = 0.1
+alpha = 0.5
+
+lr = 0.01
+batch_size = 128
+
+# change frequency of topoloies
+change_interval = 1
+rounds = 300
+
+iter_method = "iteration"
+density = 0.5
+
+hn_lr = 0.01
+embedding_dim = 100
+hidden_dim = 100
+
+stdout = "stdout"
+# data store location
+data_dir = "dataset"
+# cache location
+cache_dir = "cache"
+seed = 2022
+
+# when to deacy beta
+deacy_step = 10
+# deacy factor of gain
+gamma = 0.9
