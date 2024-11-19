@@ -2,6 +2,8 @@ import inspect
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import List, Tuple, Callable, Union, Optional
+
+import torch
 import torch.distributed as dist
 
 from dpt.distribution_operation import get_results, apply_result
@@ -152,6 +154,8 @@ class Job:
                     else:
                         result = process.func()
                     if result is not None:
+                        if not isinstance(result, torch.Tensor):
+                            raise ValueError('Only torch.Tensor could be send')
                         broadcast(result, self.master_rank)
 
                 if rank != self.master_rank and not process.master:
@@ -162,6 +166,8 @@ class Job:
                     else:
                         result = process.func()
                     if result is not None:
+                        if not isinstance(result, torch.Tensor):
+                            raise ValueError('Only torch.Tensor could be send')
                         apply_result(*(result if isinstance(result, Iterable) else [result]), dest=self.master_rank)
 
         return execute_job_pipeline
