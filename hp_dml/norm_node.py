@@ -50,9 +50,10 @@ def node_main(rank, world_size):
                 valid_count = torch.sum(valid_indices).item()
 
                 if valid_count == O[-1].item():
-                    # 节点 m 变为 root
+                    # TODO 节点 m 变为 root
                     neighbors = torch.nonzero(valid_indices).flatten().tolist()
                     O[:world_size] += 9
+                    # TODO 发送训练后的模型给邻居
                 elif valid_count == world_size - 1:
                     # TODO 定义 m 为开始节点
                     pass
@@ -87,6 +88,7 @@ def model_update(rank):
 
 def handle_step(M_t, step):
     """处理不同的 step 阶段"""
+    # TODO root节点step不同
     if step == 0:
         # 聚合模型
         # TODO Aggregate
