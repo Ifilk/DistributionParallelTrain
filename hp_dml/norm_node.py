@@ -36,6 +36,9 @@ def node_main(rank, world_size):
             # 如果已更新
             if is_updated:
                 O[rank] = -1
+                # 随机邻居转发
+                neighbor = torch.randint(0, world_size, (1,)).item()
+                isend(tensor=O, dst=neighbor)
                 continue
 
             # 如果 O[m] 是 0，进行相应逻辑
@@ -51,7 +54,7 @@ def node_main(rank, world_size):
                     neighbors = torch.nonzero(valid_indices).flatten().tolist()
                     O[:world_size] += 9
                 elif valid_count == world_size - 1:
-                    # 定义 m 为开始节点
+                    # TODO 定义 m 为开始节点
                     pass
                 else:
                     # 随机邻居转发
@@ -76,6 +79,7 @@ def node_main(rank, world_size):
 
 def model_update(rank):
     """模拟训练逻辑"""
+    # TODO model update
     print(f"Node {rank}: Performing model update...")
     # 示例代码，用实际模型替换
     pass
@@ -85,6 +89,7 @@ def handle_step(M_t, step):
     """处理不同的 step 阶段"""
     if step == 0:
         # 聚合模型
+        # TODO Aggregate
         print(f"Step {step}: Aggregating model...")
         step += 1
     elif step == 1:
@@ -99,12 +104,12 @@ def handle_step(M_t, step):
 
 
 # 主程序入口
-if __name__ == "__main__":
-    rank = int(input("Enter rank: "))  # 节点编号
-    world_size = int(input("Enter world size: "))  # 总节点数
-
-    init_environment(rank=rank, world_size=world_size)
-    try:
-        node_main(rank, world_size)
-    finally:
-        torch.distributed.destroy_process_group()
+# if __name__ == "__main__":
+#     rank = int(input("Enter rank: "))  # 节点编号
+#     world_size = int(input("Enter world size: "))  # 总节点数
+#
+#     init_environment(rank=rank, world_size=world_size)
+#     try:
+#         node_main(rank, world_size)
+#     finally:
+#         torch.distributed.destroy_process_group()
