@@ -6,7 +6,6 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.optim as optim
 import torch.nn as nn
-import torch.distributed as dist
 from datetime import timedelta
 
 class ToyModel(nn.Module):

@@ -12,6 +12,8 @@ from torch import distributed as dist
 class CommException(Exception):
     ...
 
+class CommTimeOutException(CommException):
+    ...
 
 @dataclass
 class MetaMessage(Generic[T]):
@@ -93,7 +95,7 @@ def send_with_timeout(tensor: torch.Tensor, dest, timeout):
     send_thread.start()
     send_thread.join(timeout)
     if not success.is_set():
-        raise CommException(f"Send operation to rank {dest} timed out after {timeout} seconds")
+        raise CommTimeOutException(f"Send operation to rank {dest} timed out after {timeout} seconds")
 
     return True
 
@@ -112,7 +114,7 @@ def recv_with_timeout(tensor: torch.Tensor, dest, timeout):
     send_thread.start()
     send_thread.join(timeout)
     if not success.is_set():
-        raise CommException(f"Recv operation to rank {dest} timed out after {timeout} seconds")
+        raise CommTimeOutException(f"Recv operation to rank {dest} timed out after {timeout} seconds")
 
     return True
 
