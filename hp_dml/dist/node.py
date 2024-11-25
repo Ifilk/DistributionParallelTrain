@@ -3,7 +3,7 @@ import threading
 import torch
 from torch import nn
 
-from hp_dml.dist.comm import DistributionComm, CommException, MetaMessage
+from hp_dml.dist import send, recv, CommException, MetaMessage
 from hp_dml.logger import logger
 
 class SendException(Exception):
@@ -15,10 +15,8 @@ class Node(abc.ABC):
                  group_density: float,
                  model: nn.Module,
                  # insurance: int,
-                 dist_comm: DistributionComm,
                  max_retry: int=4,
                  max_cuda_device_count: int=8):
-        self.comm = dist_comm
         self._max_retry = max_retry
         self.neighbors = None
         self._is_in_group = False
@@ -60,7 +58,7 @@ class Node(abc.ABC):
         _exception = None
         while self._max_retry >= retry_count:
             try:
-                self.comm.send(group_message, dest)
+                send(group_message, dest)
                 return
             except CommException as ce:
                 logger.warn(f'Exception occurring while group message sending\n {ce}')
@@ -113,12 +111,12 @@ class Node(abc.ABC):
 
     def sync_model(self):
         for p in self.model.parameters():
-            tensor = self.comm.recv(p.data, self.last_receiver)
+            tensor = recv(p.data, self.last_receiver)
             p.data = tensor
 
     def send_model(self, dest):
         for p in self.model.parameters():
-            self.comm.send(p.data, dest)
+            send(p.data, dest)
 
     @abc.abstractmethod
     def update_model(self) -> torch.Tensor:

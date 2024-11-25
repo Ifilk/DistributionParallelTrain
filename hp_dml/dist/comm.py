@@ -1,7 +1,7 @@
 import functools
 import threading
 from dataclasses import dataclass
-from typing import Generic, Tuple, TypeVar, cast
+from typing import Generic, Tuple, TypeVar, cast, Optional, Any
 
 T = TypeVar('T')
 
@@ -12,8 +12,10 @@ from torch import distributed as dist
 class CommException(Exception):
     ...
 
+
 class CommTimeOutException(CommException):
     ...
+
 
 @dataclass
 class MetaMessage(Generic[T]):
@@ -25,60 +27,65 @@ class MetaMessage(Generic[T]):
     def type(self):
         return self._type
 
+
 class DistributionComm:
     """
     分布式通信类，用于初始化和管理分布式环境下的通信过程。
 
     参数:
-    - rank: 当前进程的排名，用于标识进程。
-    - timeout: 通信超时时间，如果为None，则没有超时限制。
     - max_length: 最大消息长度，默认为8。
     - placeholder: 用于填充消息的值，默认为0。
     - _type: 消息的数据类型，默认为torch.int8。
 
     该类初始化时会根据提供的参数设置通信的超时时间和消息处理方式。
     """
+
     def __init__(self,
-                 rank,
-                 timeout=None,
                  max_length: int = 8,
                  placeholder=0,
                  _type=torch.int8):
-        self._rank = rank
-        self._timeout = timeout
-        self._meta_message_shape = (max_length,)
-        self._meta_message_handler = _build_meta_message_parser(_type, max_length, placeholder)
-        self._meta_message_builder = _build_meta_message_builder(_type, max_length, placeholder)
+        self._rank = dist.get_rank()
+        self.meta_message_shape = (max_length,)
+        self.meta_message_handler = _build_meta_message_parser(_type, max_length, placeholder)
+        self.meta_message_builder = _build_meta_message_builder(_type, max_length, placeholder)
         self._meta_type = -1
-        if timeout is not None:
-            self.send = functools.partial(self._send_tensor, send_with_timeout)
-            self.recv = functools.partial(self._recv_tensor, recv_with_timeout)
+        self.send = functools.partial(self._send_tensor, send_with_timeout)
+        self.recv = functools.partial(self._recv_tensor, recv_with_timeout)
+
+        self._last_recv = None
+
+
+    def _send_tensor(self, send_func, meta_type, tensor: torch.Tensor, dest, timeout=None, meta=True):
+        if meta:
+            send_func(self.meta_message_builder(MetaMessage(
+                _type=meta_type,
+                sender=self._rank,
+                params=tuple(tensor.shape)
+            )), dest, timeout)
+        send_func(tensor, dest, timeout)
+
+    def _recv_tensor(self, recv_func, src=None, timeout=None, meta=True, shape=None):
+        if meta:
+            tensor = torch.zeros(self.meta_message_shape)
+            recv_func(tensor, src, timeout)
+            meta_m = self.meta_message_handler(tensor)
+            tensor = torch.zeros(meta_m.params)
+            self._meta_type = meta_m.type
+            recv_func(tensor, meta_m.sender, timeout)
         else:
-            self.send = functools.partial(self._send_tensor,
-                                          lambda tensor, dest, *_, **__: dist.send(tensor, dest))
-            self.recv = functools.partial(self._recv_tensor,
-                                          lambda tensor, dest, *_, **__: dist.recv(tensor, dest))
+            tensor = torch.zeros(shape)
+            recv_func(tensor, src, timeout)
+            self._meta_type = -1
+        self._last_recv = tensor
+        return tensor
 
     @property
-    def get_meta_type(self):
+    def last_recv(self):
+        return self._last_recv
+
+    @property
+    def meta_type(self):
         return self._meta_type
-
-    def _send_tensor(self, send_func, meta_type, tensor: torch.Tensor, dest):
-        send_func(self._meta_message_builder(MetaMessage(
-            _type=meta_type,
-            sender=self._rank,
-            params=tuple(tensor.shape)
-        )), dest, self._timeout)
-        send_func(tensor, dest, self._timeout)
-
-    def _recv_tensor(self, recv_func, src=None):
-        tensor = torch.zeros(self._meta_message_shape)
-        recv_func(tensor, src, self._timeout)
-        meta = self._meta_message_handler(tensor)
-        tensor = torch.zeros(meta.params)
-        self._meta_type = meta.type
-        recv_func(tensor, meta.sender, self._timeout)
-        return tensor
 
 
 def send_with_timeout(tensor: torch.Tensor, dest, timeout):
@@ -163,3 +170,56 @@ def _build_meta_message_builder(_type, max_length: int, placeholder):
         return _mm
 
     return meta_message_builder
+
+
+global_comm = None
+
+
+def _unimplemented_error():
+    raise CommException('Must be initialized first')
+
+
+send = lambda meta_type, tensor, dest, timeout=None, meta=True: _unimplemented_error()
+
+recv = lambda src=None, timeout=None, meta=True: _unimplemented_error()
+
+last_recv = lambda : _unimplemented_error()
+
+get_meta_state = lambda : _unimplemented_error()
+
+
+def init_process_group(
+        backend: Optional[str] = None,
+        init_method: Optional[str] = None,
+        world_size: int = -1,
+        rank: int = -1,
+        store = None,
+        group_name: str = "",
+        pg_options: Optional[Any] = None,
+        device_id: Optional[torch.device] = None,
+        meta_message_length: int = 8,
+        meta_message_placeholder=0,
+        meta_message_type=torch.int8
+):
+    global global_comm, send, recv, last_recv, get_meta_state
+    dist.init_process_group(
+        backend=backend,
+        init_method=init_method,
+        world_size=world_size,
+        rank=rank,
+        store=store,
+        group_name=group_name,
+        pg_options=pg_options,
+        device_id=device_id
+    )
+
+    global_comm = DistributionComm(
+        max_length=meta_message_length,
+        placeholder=meta_message_placeholder,
+        _type=meta_message_type
+    )
+
+    send = global_comm.send
+    recv = global_comm.recv
+    last_recv = lambda : global_comm.last_recv
+    get_meta_state: lambda : global_comm.meta_type

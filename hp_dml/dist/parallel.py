@@ -1,32 +1,47 @@
 import threading
+from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Dict, List, TypeVar
+from typing import Callable, Dict, List, TypeVar, Deque
 
 from hp_dml.dist import comm
 
 T = TypeVar('T')
 
 from uuid import uuid4
-
+from hp_dml.logger import logger
 from multiprocessing import Process
+
+
+class NoAvailableWorkerNow(Exception):
+    ...
+
 
 @dataclass
 class Task:
-    func: Callable[[comm.MetaMessage], ...]
+    func: Callable[[], ...]
     mutex: bool
     sync: bool
     id: int
 
+
 class ProcessManager:
-    def __init__(self, state: int, max_worker: int):
-        self._callable_list: Dict[int, List[Task]]\
+    def __init__(self,
+                 state: int,
+                 max_worker: int,
+                 queue_size: int):
+        self._callable_list: Dict[int, List[Task]] \
             = {i: list() for i in range(0, state)}
         # self._time_out = time_out
         self._max_worker = max_worker
         self._c_lock = threading.Lock()
+        self._queue_size = queue_size
         self._concurrency: Dict[int, int] = {}
+        self._requirements_queue_for_mutex: Deque[Task] = deque()
 
-    def add_handler(self, state: int, func: Callable[[comm.MetaMessage], ...],
+        self._flash_lock = threading.Lock()
+        self._flash_process = None
+
+    def add_handler(self, state: int, func: Callable[[], ...],
                     mutex: bool, sync: bool):
         mmh = Task(
             func=func,
@@ -38,38 +53,60 @@ class ProcessManager:
         if not sync:
             self._concurrency[mmh.id] = 0
 
-    def handler(self, state: int, mutex: bool, sync: bool=False):
+    def handler(self, state: int, mutex: bool, sync: bool = False):
         def wrapper_handler(func):
-            # TODO sync support
-            assert not sync, 'SYNC handler is not support now'
             self.add_handler(state, func, mutex, sync)
+
         return wrapper_handler
 
-    def handle(self, meta_message: comm.MetaMessage):
-        _state = meta_message.type
-        for mmh in self._callable_list[_state]:
-            if mmh.mutex:
-                if self._concurrency[mmh.id] == 0:
-                    self._async_handle(meta_message, mmh)
-                else:
-                    # drop requirement for busy
-                    return
-            else:
-                self._async_handle(meta_message, mmh)
+    def handle(self, _state):
+        if _state not in self._callable_list:
+            raise ValueError(f'Unknown state {_state}')
+        for task in self._callable_list[_state]:
+            if sum(self._concurrency.values()) >= self._max_worker:
+                raise NoAvailableWorkerNow(f'No available worker for Task {task.id}')
+            self.exec_task(task)
 
-    def _async_handle(self, meta_message: comm.MetaMessage, mmh: Task):
-        if sum(self._concurrency.values()) >= self._max_worker:
-            # drop requirement for no available worker
-            return False
-        def wrapper_func(_meta_message: comm.MetaMessage, _mmh: Task):
+    def exec_task(self, task):
+        if task.sync:
+            task.func()
+        elif task.mutex:
+            if self._concurrency[task.id] == 0:
+                self._async_handle(task)
+            else:
+                if len(self._requirements_queue_for_mutex) >= self._queue_size:
+                    raise NoAvailableWorkerNow(f'No available worker for Task {task.id}')
+
+                self._requirements_queue_for_mutex.append(task)
+                with self._flash_lock:
+                    if self._flash_process is None:
+                        self._flash_process = Process(target=self._flash_requirements_queue_when_available,
+                                                      args=(self._requirements_queue_for_mutex,)).start()
+        else:
+            self._async_handle(task)
+
+    def _flash_requirements_queue_when_available(self, queue: Deque[Task]):
+        while len(queue) > 0:
+            task = queue.pop()
+            try:
+                self.exec_task(task)
+            except NoAvailableWorkerNow:
+                queue.appendleft(task)
+            except Exception as e:
+                logger.error(f'Occurring exception when handle {task} : {e}')
+        with self._flash_lock:
+            self._flash_process = None
+
+    def _async_handle(self, task: Task):
+        def wrapper_func():
             with self._c_lock:
-                self._concurrency[mmh.id] += 1
+                self._concurrency[task.id] += 1
                 try:
-                    _mmh.func(_meta_message)
+                    task.func()
                 finally:
                     with self._c_lock:
-                        self._concurrency[mmh.id] -= 1
+                        self._concurrency[task.id] -= 1
 
-        p = Process(target=wrapper_func, args=(meta_message, mmh))
+        p = Process(target=wrapper_func)
         p.start()
         return True
