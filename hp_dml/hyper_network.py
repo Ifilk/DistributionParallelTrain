@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+from hp_dml.config import HyperNetworkConfiguration
+
+
 class Linear(nn.Module):
     def __init__(self, in_features, out_features) -> None:
         super().__init__()
@@ -24,39 +27,39 @@ class Linear(nn.Module):
 
 
 class HyperNetwork(nn.Module):
-    def __init__(self, args, layer_names, client_id):
+    def __init__(self, config: HyperNetworkConfiguration, layer_names, client_id):
         super(HyperNetwork, self).__init__()
-        self.args = args
+        self.config = config
         self.client_id = client_id
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        self.client_num = self.args.world_size
+        self.client_num = self.config.world_size
 
-        self.embedding = nn.Embedding(self.client_num, self.args.embedding_dim, device=self.device)
+        self.embedding = nn.Embedding(self.client_num, self.config.embedding_dim, device=self.device)
         
         self.blocks_name = set(n.split(".")[0][:-1] for n in layer_names)
         
-        self.cache_dir = self.args.cache_dir
+        self.cache_dir = self.config.cache_dir
         if not os.path.isdir(self.cache_dir):
             # os.system(f"mkdir -p {self.cache_dir}")
             os.makedirs(self.cache_dir)
 
         if os.listdir(self.cache_dir) != self.client_num:
             for client_id in range(self.client_num):
-                with open(f'{self.cache_dir}/world_size_{self.args.world_size}/Client_{self.client_id}.pkl', "wb") as f:
+                with open(f'{self.cache_dir}/world_size_{self.config.world_size}/Client_{self.client_id}.pkl', "wb") as f:
                     pickle.dump(
                         {
                             "mlp": nn.Sequential(
-                                nn.Linear(self.args.embedding_dim, self.args.hidden_dim),
+                                nn.Linear(self.config.embedding_dim, self.config.hidden_dim),
                                 nn.ReLU(),
-                                nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
+                                nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
                                 nn.ReLU(),
-                                nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
+                                nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
                                 nn.ReLU(),
                             ),
                             
                             "fc": {
-                                name: Linear(self.args.hidden_dim, self.client_num)
+                                name: Linear(self.config.hidden_dim, self.client_num)
                                 for name in self.blocks_name
                             },
                         },
@@ -95,7 +98,7 @@ class HyperNetwork(nn.Module):
     def save_hn(self):
         for block, param in self.fc_layers.items():
             self.fc_layers[block] = param.cpu()
-        with open(f'{self.cache_dir}/world_size_{self.args.world_size}/Client_{self.client_id}.pkl', "wb") as f:
+        with open(f'{self.cache_dir}/world_size_{self.config.world_size}/Client_{self.client_id}.pkl', "wb") as f:
             pickle.dump(
                 {"mlp": self.mlp.cpu(), "fc": self.fc_layers}, f,
             )
@@ -104,7 +107,7 @@ class HyperNetwork(nn.Module):
         self.current_client_id = None
 
     def load_hn(self):
-        with open(f'{self.cache_dir}/world_size_{self.args.world_size}/Client_{self.client_id}.pkl', "rb") as f:
+        with open(f'{self.cache_dir}/world_size_{self.config.world_size}/Client_{self.client_id}.pkl', "rb") as f:
             parameters = pickle.load(f)
         self.mlp = parameters["mlp"].to(self.device)
         for block, param in parameters["fc"].items():
@@ -137,13 +140,13 @@ class HyperNetwork(nn.Module):
 
         for param, grad in zip(self.fc_layer_parameters(), fc_grads):
             if grad is not None:
-                param.data -= self.args.hn_lr * grad
+                param.data -= self.config.hn_lr * grad
 
         for param, grad in zip(self.mlp_parameters(), mlp_grads):
-            param.data -= self.args.hn_lr * grad
+            param.data -= self.config.hn_lr * grad
 
         for param, grad in zip(self.emd_parameters(), emd_grads):
-            param.data -= self.args.hn_lr * grad
+            param.data -= self.config.hn_lr * grad
             
         self.save_hn()
             

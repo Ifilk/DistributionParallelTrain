@@ -6,7 +6,7 @@ from torch import nn
 from hp_dml.dist.comm import DistributionComm, CommException, MetaMessage
 from hp_dml.logger import logger
 
-class SpreadException(Exception):
+class SendException(Exception):
     ...
 
 class Node(abc.ABC):
@@ -68,7 +68,7 @@ class Node(abc.ABC):
                 if self._max_retry >= retry_count:
                     logger.info(f'Start retrying, current round: {retry_count}')
                     retry_count += 1
-        raise SpreadException(str(_exception))
+        raise SendException(str(_exception))
     def group(self, group_message: torch.Tensor):
         valid_indices = (0 < group_message[:self._node_amount]) & (group_message[:self._node_amount] <= 8)
         valid_count = torch.sum(valid_indices).item()

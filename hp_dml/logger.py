@@ -1,5 +1,5 @@
 import logging
-from modified.utils import get_data_stamp
+from hp_dml.utils import get_data_stamp
 
 logger = logging.getLogger()
 

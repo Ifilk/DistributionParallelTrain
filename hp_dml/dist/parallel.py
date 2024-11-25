@@ -17,9 +17,6 @@ class Task:
     sync: bool
     id: int
 
-class SpreadExceptionWithNoReceiveConfirm(Exception):
-    ...
-
 class ProcessManager:
     def __init__(self, state: int, max_worker: int):
         self._callable_list: Dict[int, List[Task]]\
