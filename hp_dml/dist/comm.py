@@ -51,13 +51,13 @@ class DistributionComm:
         self._meta_message_builder = _build_meta_message_builder(_type, max_length, placeholder)
         self._meta_type = -1
         if timeout is not None:
-            self.send = functools.partial(self._send_tensor, send_func=send_with_timeout)
-            self.recv = functools.partial(self._recv_tensor, recv_func=recv_with_timeout)
+            self.send = functools.partial(self._send_tensor, send_with_timeout)
+            self.recv = functools.partial(self._recv_tensor, recv_with_timeout)
         else:
             self.send = functools.partial(self._send_tensor,
-                                          send_func=lambda tensor, dest, *_, **__: dist.send(tensor, dest))
+                                          lambda tensor, dest, *_, **__: dist.send(tensor, dest))
             self.recv = functools.partial(self._recv_tensor,
-                                          recv_func=lambda tensor, dest, *_, **__: dist.recv(tensor, dest))
+                                          lambda tensor, dest, *_, **__: dist.recv(tensor, dest))
 
     @property
     def get_meta_type(self):
@@ -71,9 +71,9 @@ class DistributionComm:
         )), dest, self._timeout)
         send_func(tensor, dest, self._timeout)
 
-    def _recv_tensor(self, recv_func):
+    def _recv_tensor(self, recv_func, src=None):
         tensor = torch.zeros(self._meta_message_shape)
-        recv_func(tensor, None, self._timeout)
+        recv_func(tensor, src, self._timeout)
         meta = self._meta_message_handler(tensor)
         tensor = torch.zeros(meta.params)
         self._meta_type = meta.type
@@ -152,8 +152,8 @@ def _build_meta_message_builder(_type, max_length: int, placeholder):
         if len(mm.params) + 2 > max_length:
             raise CommException('Too many parameters to send')
 
-        if not (isinstance(mm.type, _type) and
-                isinstance(mm.sender, _type) and
+        if not (isinstance(mm.type, ptype) and
+                isinstance(mm.sender, ptype) and
                 all(isinstance(item, int) for item in mm.params)):
             raise CommException('Type Error')
         _data = [mm.type, mm.sender, *mm.params]
