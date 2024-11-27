@@ -3,8 +3,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Dict, List, TypeVar, Deque
 
-from hp_dml.dist import comm
-
 T = TypeVar('T')
 
 from uuid import uuid4

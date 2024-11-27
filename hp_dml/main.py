@@ -1,38 +1,11 @@
-import logging
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-import argparse
+import torch
 
+from hp_dml.config_manager import JobConfig
 import numpy as np
 
 from hp_dml.test.dataset import init_dataset_new, init_dataset
 from hp_dml.logger import logger, logger_init
 from hp_dml.utils import set_random_seed
-
-
-def args_parse():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('-config', default='config.toml', type=str)
-    parser.add_argument('--color_log', action='store_true')
-    parser.add_argument('--v', '--verbose', action='store_true')
-
-    return parser.parse_args()
-
-
-def load_config(toml_file):
-    try:
-        with open(toml_file, 'rb') as f:
-            config = tomllib.load(f)
-        return config
-    except FileNotFoundError:
-        logger.error(f"Error: Config file '{toml_file}' not found.")
-        exit(1)
-    except tomllib.TOMLDecodeError as e:
-        logger.error(f"Error parsing TOML file: {e}")
-        exit(1)
 
 def init_data(partition_method: bool):
     if partition_method:
@@ -82,18 +55,16 @@ def init_with_config(config):
 
 
 if __name__ == '__main__':
-    args = args_parse()
+    job_config = JobConfig()
+    job_config.parse_args()
 
-    logger_init(args.color_log)
+    logger.info(f"Starting job: {job_config.job.description}")
 
-    if args.v:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
-
-    row_config = load_config(args.config)
+    logger_init(job_config.metrics.enable_color_printing)
 
     init_with_config(row_config)
+
+    torch.distributed.destroy_process_group()
 
 
 

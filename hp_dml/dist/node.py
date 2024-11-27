@@ -45,7 +45,20 @@ class Node(abc.ABC):
             self._last_receiver = -1
 
     def activate(self):
-        ...
+        group_message = torch.zeros((self._node_amount, ))
+        group_message[self._rank] = min(torch.cuda.device_count(), self._max_cuda_device_count)
+        zero_count = torch.sum((group_message[:self._node_amount] == 0)).item()
+        lucky_neighbor = torch.randint(0, zero_count, (1,)).item()
+        self._is_start_node = True
+        real_rank = 0
+        z = 0
+        for o in group_message:
+            if z == lucky_neighbor:
+                break
+            if o == 0:
+                z += 1
+            real_rank += 1
+        self.safe_spread_group_message(group_message, real_rank)
 
     def before_group(self, meta_message: MetaMessage):
         self._last_sender = meta_message.sender
@@ -70,10 +83,10 @@ class Node(abc.ABC):
     def group(self, group_message: torch.Tensor):
         valid_indices = (0 < group_message[:self._node_amount]) & (group_message[:self._node_amount] <= 8)
         valid_count = torch.sum(valid_indices).item()
-        zero_count = torch.sum((group_message[:self._node_amount] == 0)).item()
         group_message[self._rank] = min(torch.cuda.device_count(), self._max_cuda_device_count)
+        zero_count = torch.sum((group_message[:self._node_amount] == 0)).item()
         if valid_count == 0:
-            self._is_end_node = True
+            self._is_start_node = True
         elif valid_count == group_message[-1].item():
             self._is_end_node = True
             self.neighbors = torch.nonzero(valid_indices).flatten().tolist()

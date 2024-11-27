@@ -16,6 +16,9 @@ class CommException(Exception):
 class CommTimeOutException(CommException):
     ...
 
+class InvalidRank(CommException):
+    ...
+
 
 @dataclass
 class MetaMessage(Generic[T]):
@@ -56,6 +59,8 @@ class DistributionComm:
 
 
     def _send_tensor(self, send_func, meta_type, tensor: torch.Tensor, dest, timeout=None, meta=True):
+        if dest < 0:
+            raise InvalidRank(f'{dest}')
         if meta:
             send_func(self.meta_message_builder(MetaMessage(
                 _type=meta_type,

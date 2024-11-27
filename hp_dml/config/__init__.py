@@ -1,1 +1,2 @@
 from .HyperNetworkConfiguration import HyperNetworkConfiguration
+from .ModelConfiguration import ModelConfiguration

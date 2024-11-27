@@ -558,6 +558,21 @@ class JobConfig:
             action="store_true",
         )
 
+        # --------------------------------------------------------
+
+        self.parser.add_argument(
+            "--hyper_network.learning_rate",
+            type=float
+        )
+        self.parser.add_argument(
+            "--hyper_network.embedding_dim",
+            type=int
+        )
+        self.parser.add_argument(
+            "--hyper_network.hidden_dim",
+            type=int
+        )
+
     def parse_args(self, args_list: list = sys.argv[1:]):
         args, cmd_args = self.parse_args_from_command_line(args_list)
         config_file = getattr(args, "job.config_file", None)
